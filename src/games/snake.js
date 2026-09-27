@@ -5,6 +5,7 @@ const GRID = 26;
 const SIZE = 702;
 const CELL = SIZE / GRID;
 const APPLES_PER_LEVEL = 3;
+const SPEED_BY_LEVEL = [230, 215, 200, 185, 170, 155, 145, 135, 125];
 const SNAKE_EVOLUTIONS = [
   { name: 'RẮN CỎ', edge: '#172617', flank: '#385527', body: '#66893b', ridge: '#86a94f', sheen: 'rgba(225,238,162,.16)', pattern: 'rgba(29,54,23,.72)', accent: 'rgba(205,222,127,.42)', headLight: '#b7ce72', headMid: '#6f943e', headDark: '#294421', eye: '#d4aa32' },
   { name: 'RẮN LỤC NGỌC', edge: '#092e24', flank: '#125943', body: '#23996c', ridge: '#54c790', sheen: 'rgba(190,255,221,.22)', pattern: 'rgba(5,64,46,.72)', accent: 'rgba(186,255,203,.55)', headLight: '#9aebaf', headMid: '#31a66e', headDark: '#0b4d38', eye: '#f1ca43' },
@@ -12,6 +13,9 @@ const SNAKE_EVOLUTIONS = [
   { name: 'RẮN SAN HÔ', edge: '#38141d', flank: '#6d2633', body: '#b84558', ridge: '#df6b70', sheen: 'rgba(255,210,178,.22)', pattern: 'rgba(60,15,25,.78)', accent: 'rgba(255,189,105,.62)', headLight: '#ffad83', headMid: '#c24b58', headDark: '#5e202d', eye: '#ffd25d' },
   { name: 'RẮN BẠCH NGỌC', edge: '#273048', flank: '#465479', body: '#7888b4', ridge: '#bac6e3', sheen: 'rgba(255,255,255,.32)', pattern: 'rgba(38,47,75,.7)', accent: 'rgba(232,242,255,.72)', headLight: '#f2f5ff', headMid: '#8d9bc1', headDark: '#3c486b', eye: '#82e9ff' },
   { name: 'RẮN THIÊN HÀ', edge: '#102d30', flank: '#175b5c', body: '#269c91', ridge: '#6ee3ce', sheen: 'rgba(216,255,247,.34)', pattern: 'rgba(29,25,71,.78)', accent: 'rgba(255,219,104,.78)', headLight: '#c8fff0', headMid: '#45b5a3', headDark: '#194e50', eye: '#ffe978' },
+  { name: 'RẮN HẮC DIỆM', edge: '#16090d', flank: '#461522', body: '#882b3f', ridge: '#f14d5f', sheen: 'rgba(255,177,128,.3)', pattern: 'rgba(25,7,12,.84)', accent: 'rgba(255,126,58,.82)', headLight: '#ff9b68', headMid: '#a63245', headDark: '#3a101a', eye: '#ffbd45' },
+  { name: 'RẮN BĂNG TINH', edge: '#10263c', flank: '#215779', body: '#4097b8', ridge: '#91e8f4', sheen: 'rgba(226,253,255,.4)', pattern: 'rgba(20,45,82,.8)', accent: 'rgba(213,250,255,.88)', headLight: '#d8fbff', headMid: '#5bb8d0', headDark: '#193f5c', eye: '#a7ffff' },
+  { name: 'RẮN ĐẾ VƯƠNG', edge: '#1b0b2c', flank: '#442064', body: '#75409d', ridge: '#efc75e', sheen: 'rgba(255,239,170,.42)', pattern: 'rgba(34,13,54,.86)', accent: 'rgba(255,215,99,.94)', headLight: '#fff0a8', headMid: '#9560b4', headDark: '#351647', eye: '#ffe35d' },
 ];
 const ARENA_DETAILS = Array.from({ length: 52 }, (_, index) => ({
   x: 14 + ((index * 137) % (SIZE - 28)),
@@ -19,6 +23,13 @@ const ARENA_DETAILS = Array.from({ length: 52 }, (_, index) => ({
   size: 2 + (index % 5),
   type: index % 4,
   rotation: (index * 47 % 360) * Math.PI / 180,
+}));
+const SOIL_TEXTURE = Array.from({ length: 190 }, (_, index) => ({
+  x: 5 + ((index * 109) % (SIZE - 10)),
+  y: 5 + ((index * 173) % (SIZE - 10)),
+  size: .6 + (index % 5) * .38,
+  type: index % 5,
+  rotation: (index * 61 % 360) * Math.PI / 180,
 }));
 
 export function createSnakeGame({ onBack }) {
@@ -36,6 +47,7 @@ export function createSnakeGame({ onBack }) {
   let ended = false;
   let recorded = false;
   let pulse = 0;
+  let swipeState = null;
 
   const root = document.createElement('section');
   root.className = 'game-shell snake-game enter';
@@ -63,15 +75,29 @@ export function createSnakeGame({ onBack }) {
         <div class="canvas-overlay"><small>LƯỢT CHƠI KẾT THÚC</small><strong>TRÒ CHƠI KẾT THÚC</strong><span>Điểm <b>0</b></span><button>CHƠI LẠI</button></div>
         <div class="habitat-corners" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
       </div>
+      <div class="touch-controls glass" aria-label="Điều khiển cảm ứng">
+        <div class="touch-controls-heading"><div><strong>ĐIỀU KHIỂN</strong><small>Vuốt trên sân hoặc dùng bàn phím</small></div><span>CHẠM NHẸ</span></div>
+        <div class="touch-controls-body">
+          <div class="mobile-dpad" role="group" aria-label="Chọn hướng di chuyển">
+            <button data-dir="up" aria-label="Đi lên"><span>▲</span></button>
+            <button data-dir="left" aria-label="Sang trái"><span>◀</span></button>
+            <i class="dpad-center" aria-hidden="true"><b></b></i>
+            <button data-dir="right" aria-label="Sang phải"><span>▶</span></button>
+            <button data-dir="down" aria-label="Đi xuống"><span>▼</span></button>
+          </div>
+          <div class="mobile-game-actions">
+            <button class="pause-button" aria-pressed="false"><span>Ⅱ</span>TẠM DỪNG</button>
+            <button class="restart-button"><span>↻</span>CHƠI LẠI</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="touch-controls" aria-label="Điều khiển cảm ứng">
-      <button data-dir="up">▲</button><button data-dir="left">◀</button><button data-dir="down">▼</button><button data-dir="right">▶</button>
-    </div>`;
+    `;
 
   const canvas = root.querySelector('canvas');
   const context = canvas.getContext('2d');
   const overlay = root.querySelector('.canvas-overlay');
-  const pauseButton = root.querySelector('.pause-button');
+  const pauseButtons = [...root.querySelectorAll('.pause-button')];
 
   function randomFood(existingFoods = []) {
     let next;
@@ -86,23 +112,32 @@ export function createSnakeGame({ onBack }) {
 
   function draw() {
     const arena = context.createLinearGradient(0, 0, SIZE, SIZE);
-    arena.addColorStop(0, '#17281a');
-    arena.addColorStop(0.48, '#0d1c12');
-    arena.addColorStop(1, '#07100b');
+    arena.addColorStop(0, '#493721');
+    arena.addColorStop(0.42, '#332517');
+    arena.addColorStop(1, '#1c140d');
     context.fillStyle = arena;
     context.fillRect(0, 0, SIZE, SIZE);
 
-    context.lineWidth = 1;
-    for (let line = 0; line <= GRID; line += 1) {
-      context.strokeStyle = line % 4 === 0 ? 'rgba(139, 180, 105, .095)' : 'rgba(129, 158, 113, .032)';
-      context.beginPath(); context.moveTo(line * CELL, 0); context.lineTo(line * CELL, SIZE); context.stroke();
-      context.beginPath(); context.moveTo(0, line * CELL); context.lineTo(SIZE, line * CELL); context.stroke();
-    }
+    const warmSoil = context.createRadialGradient(SIZE * .25, SIZE * .22, 10, SIZE * .25, SIZE * .22, SIZE * .55);
+    warmSoil.addColorStop(0, 'rgba(132, 95, 49, .2)');
+    warmSoil.addColorStop(.62, 'rgba(75, 51, 27, .08)');
+    warmSoil.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    context.fillStyle = warmSoil;
+    context.fillRect(0, 0, SIZE, SIZE);
+
+    const dampSoil = context.createRadialGradient(SIZE * .74, SIZE * .68, 8, SIZE * .74, SIZE * .68, SIZE * .5);
+    dampSoil.addColorStop(0, 'rgba(20, 34, 18, .24)');
+    dampSoil.addColorStop(.7, 'rgba(31, 25, 16, .08)');
+    dampSoil.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    context.fillStyle = dampSoil;
+    context.fillRect(0, 0, SIZE, SIZE);
+
+    drawSoilTexture();
 
     const arenaGlow = context.createRadialGradient(SIZE / 2, SIZE / 2, SIZE * .1, SIZE / 2, SIZE / 2, SIZE * .7);
-    arenaGlow.addColorStop(0, 'rgba(117, 157, 75, .075)');
+    arenaGlow.addColorStop(0, 'rgba(155, 123, 70, .07)');
     arenaGlow.addColorStop(.72, 'rgba(0, 0, 0, 0)');
-    arenaGlow.addColorStop(1, 'rgba(0, 0, 0, .46)');
+    arenaGlow.addColorStop(1, 'rgba(0, 0, 0, .54)');
     context.fillStyle = arenaGlow;
     context.fillRect(0, 0, SIZE, SIZE);
     drawArenaDetails();
@@ -113,8 +148,32 @@ export function createSnakeGame({ onBack }) {
     drawRealisticSnake();
 
     context.shadowBlur = 0;
-    context.strokeStyle = 'rgba(154,190,104,.3)'; context.lineWidth = 2;
+    context.strokeStyle = 'rgba(158,121,73,.38)'; context.lineWidth = 2;
     context.strokeRect(1, 1, SIZE - 2, SIZE - 2);
+  }
+
+  function drawSoilTexture() {
+    context.save();
+    SOIL_TEXTURE.forEach((grain) => {
+      context.save();
+      context.translate(grain.x, grain.y);
+      context.rotate(grain.rotation);
+      if (grain.type <= 1) {
+        context.fillStyle = grain.type === 0 ? 'rgba(202,159,91,.12)' : 'rgba(24,17,11,.22)';
+        context.beginPath(); context.ellipse(0, 0, grain.size * 1.5, grain.size, 0, 0, Math.PI * 2); context.fill();
+      } else if (grain.type === 2) {
+        context.strokeStyle = 'rgba(111,79,42,.2)'; context.lineWidth = .7;
+        context.beginPath(); context.moveTo(-grain.size * 2.5, 0); context.quadraticCurveTo(0, -grain.size, grain.size * 2.5, 0); context.stroke();
+      } else if (grain.type === 3) {
+        context.fillStyle = 'rgba(118,91,56,.14)';
+        context.beginPath(); context.arc(0, 0, grain.size * 1.2, 0, Math.PI * 2); context.fill();
+      } else {
+        context.strokeStyle = 'rgba(58,42,25,.2)'; context.lineWidth = .8;
+        context.beginPath(); context.moveTo(-grain.size * 2, 0); context.lineTo(grain.size * 2, 0); context.stroke();
+      }
+      context.restore();
+    });
+    context.restore();
   }
 
   function drawApple(item, index) {
@@ -152,20 +211,20 @@ export function createSnakeGame({ onBack }) {
       context.translate(detail.x, detail.y);
       context.rotate(detail.rotation);
       if (detail.type === 0) {
-        context.fillStyle = 'rgba(100,116,86,.16)';
+        context.fillStyle = 'rgba(118,105,82,.38)';
         context.beginPath(); context.ellipse(0, 0, detail.size * 1.4, detail.size, 0, 0, Math.PI * 2); context.fill();
-        context.strokeStyle = 'rgba(185,195,158,.1)'; context.lineWidth = .7; context.stroke();
+        context.strokeStyle = 'rgba(205,184,145,.18)'; context.lineWidth = .7; context.stroke();
       } else if (detail.type === 1) {
-        context.strokeStyle = 'rgba(102,156,73,.2)'; context.lineWidth = 1.2;
+        context.strokeStyle = 'rgba(104,151,69,.38)'; context.lineWidth = 1.2;
         for (const offset of [-2, 0, 2]) {
           context.beginPath(); context.moveTo(offset, 3); context.quadraticCurveTo(offset - 1, -2, offset + (offset ? 1 : 0), -detail.size * 2); context.stroke();
         }
       } else if (detail.type === 2) {
-        context.fillStyle = 'rgba(91,126,67,.13)';
+        context.fillStyle = 'rgba(111,91,48,.28)';
         context.beginPath(); context.ellipse(0, 0, detail.size * 1.8, detail.size * .65, 0, 0, Math.PI * 2); context.fill();
-        context.strokeStyle = 'rgba(153,181,104,.11)'; context.beginPath(); context.moveTo(-detail.size, 0); context.lineTo(detail.size, 0); context.stroke();
+        context.strokeStyle = 'rgba(189,144,76,.2)'; context.beginPath(); context.moveTo(-detail.size, 0); context.lineTo(detail.size, 0); context.stroke();
       } else {
-        context.fillStyle = 'rgba(91,69,43,.12)';
+        context.fillStyle = 'rgba(43,31,19,.3)';
         context.beginPath(); context.arc(0, 0, detail.size * .8, 0, Math.PI * 2); context.fill();
       }
       context.restore();
@@ -465,7 +524,8 @@ export function createSnakeGame({ onBack }) {
 
   function scheduleLoop() {
     clearInterval(loopId);
-    loopId = setInterval(tick, Math.max(55, 145 - (level - 1) * 11));
+    const speed = SPEED_BY_LEVEL[Math.min(level - 1, SPEED_BY_LEVEL.length - 1)];
+    loopId = setInterval(tick, speed);
   }
 
   function showEvolution() {
@@ -556,8 +616,10 @@ export function createSnakeGame({ onBack }) {
     paused = false;
     ended = false;
     recorded = false;
-    pauseButton.textContent = 'Ⅱ TẠM DỪNG';
-    pauseButton.setAttribute('aria-pressed', 'false');
+    pauseButtons.forEach((button, index) => {
+      button.innerHTML = index === 0 ? 'Ⅱ TẠM DỪNG' : '<span>Ⅱ</span>TẠM DỪNG';
+      button.setAttribute('aria-pressed', 'false');
+    });
     root.querySelector('.snake-pause-overlay').classList.remove('visible');
     root.querySelector('.evolution-toast').classList.remove('show');
     canvas.classList.remove('snake-evolve');
@@ -572,6 +634,33 @@ export function createSnakeGame({ onBack }) {
     nextDirection = candidate;
   }
 
+  function vibrate(duration = 9) {
+    navigator.vibrate?.(duration);
+  }
+
+  function handleSwipeStart(event) {
+    if (event.pointerType === 'mouse' || ended || paused) return;
+    swipeState = { id: event.pointerId, x: event.clientX, y: event.clientY, handled: false };
+    canvas.setPointerCapture?.(event.pointerId);
+  }
+
+  function handleSwipeMove(event) {
+    if (!swipeState || swipeState.id !== event.pointerId || swipeState.handled) return;
+    const deltaX = event.clientX - swipeState.x;
+    const deltaY = event.clientY - swipeState.y;
+    if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < 20) return;
+    const swipeDirection = Math.abs(deltaX) > Math.abs(deltaY)
+      ? (deltaX > 0 ? 'right' : 'left')
+      : (deltaY > 0 ? 'down' : 'up');
+    setDirection(swipeDirection);
+    swipeState.handled = true;
+    vibrate();
+  }
+
+  function handleSwipeEnd(event) {
+    if (swipeState?.id === event.pointerId) swipeState = null;
+  }
+
   function handleKey(event) {
     const keys = { ArrowUp: 'up', w: 'up', W: 'up', ArrowDown: 'down', s: 'down', S: 'down', ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right' };
     if (keys[event.key]) { event.preventDefault(); setDirection(keys[event.key]); }
@@ -581,18 +670,30 @@ export function createSnakeGame({ onBack }) {
   function togglePause() {
     if (ended) return;
     paused = !paused;
-    pauseButton.textContent = paused ? '▶ TIẾP TỤC' : 'Ⅱ TẠM DỪNG';
-    pauseButton.setAttribute('aria-pressed', String(paused));
+    pauseButtons.forEach((button, index) => {
+      const icon = paused ? '▶' : 'Ⅱ';
+      const label = paused ? 'TIẾP TỤC' : 'TẠM DỪNG';
+      button.innerHTML = index === 0 ? `${icon} ${label}` : `<span>${icon}</span>${label}`;
+      button.setAttribute('aria-pressed', String(paused));
+    });
     root.querySelector('.snake-pause-overlay').classList.toggle('visible', paused);
     sound.click();
   }
 
   window.addEventListener('keydown', handleKey);
-  root.querySelectorAll('[data-dir]').forEach((button) => button.addEventListener('pointerdown', (event) => { event.preventDefault(); setDirection(button.dataset.dir); }));
+  canvas.addEventListener('pointerdown', handleSwipeStart);
+  canvas.addEventListener('pointermove', handleSwipeMove);
+  canvas.addEventListener('pointerup', handleSwipeEnd);
+  canvas.addEventListener('pointercancel', handleSwipeEnd);
+  root.querySelectorAll('[data-dir]').forEach((button) => button.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    setDirection(button.dataset.dir);
+    vibrate();
+  }));
   root.querySelectorAll('.restart-button, .restart-icon').forEach((button) => button.addEventListener('click', restart));
   root.querySelector('.back-button').addEventListener('click', onBack);
   root.querySelector('.canvas-overlay button').addEventListener('click', restart);
-  pauseButton.addEventListener('click', togglePause);
+  pauseButtons.forEach((button) => button.addEventListener('click', togglePause));
   restart();
 
   return {
@@ -601,6 +702,10 @@ export function createSnakeGame({ onBack }) {
       clearInterval(loopId);
       clearTimeout(evolveTimer);
       window.removeEventListener('keydown', handleKey);
+      canvas.removeEventListener('pointerdown', handleSwipeStart);
+      canvas.removeEventListener('pointermove', handleSwipeMove);
+      canvas.removeEventListener('pointerup', handleSwipeEnd);
+      canvas.removeEventListener('pointercancel', handleSwipeEnd);
       addPlayTime((Date.now() - startedAt) / 1000);
     },
   };
