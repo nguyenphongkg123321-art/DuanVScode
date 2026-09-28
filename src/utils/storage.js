@@ -1,16 +1,6 @@
-const LEGACY_KEY = 'mini-game-hub-v1';
-const AUTH_KEY = 'mini-game-hub-auth-v1';
-const USER_DATA_KEY = 'mini-game-hub-user-data-v1';
-const GLOBAL_DATA_KEY = 'mini-game-hub-global-v1';
+import { apiRequest } from './api.js';
 
-const starterScores = [
-  { player: 'NOVA', game: 'SNAKE', score: 1240, date: '2026-03-18' },
-  { player: 'PIXEL', game: 'BLOCK', score: 980, date: '2026-03-20' },
-  { player: 'BYTE', game: 'CARO', score: 8, date: '2026-03-19' },
-  { player: 'LUNA', game: 'SNAKE', score: 760, date: '2026-03-16' },
-  { player: 'KIRA', game: 'BLOCK', score: 620, date: '2026-03-14' },
-];
-
+const SETTINGS_KEY = 'mini-game-hub-settings-v1';
 const defaultSettings = {
   theme: 'dark',
   soundEnabled: true,
@@ -18,16 +8,20 @@ const defaultSettings = {
   musicTrack: 'neon-drive',
 };
 
-function parseJson(key, fallback) {
+function readSettings() {
   try {
-    const value = JSON.parse(localStorage.getItem(key));
-    return value && typeof value === 'object' ? value : fallback;
+    const current = localStorage.getItem(SETTINGS_KEY);
+    const legacyGlobal = localStorage.getItem('mini-game-hub-global-v1');
+    const legacySingle = localStorage.getItem('mini-game-hub-v1');
+    const value = JSON.parse(current || legacyGlobal || legacySingle);
+    const storedSettings = current ? value : value?.settings;
+    return { ...defaultSettings, ...(storedSettings && typeof storedSettings === 'object' ? storedSettings : {}) };
   } catch {
-    return fallback;
+    return { ...defaultSettings };
   }
 }
 
-function defaultUserData(username = 'NGƯỜI CHƠI') {
+function emptyUserData(username = 'NGƯỜI CHƠI') {
   return {
     profile: { username, avatar: 'neon', gamesPlayed: 0, playTime: 0 },
     scores: { snake: 0, block: 0, caroX: 0, caroO: 0 },
@@ -35,190 +29,108 @@ function defaultUserData(username = 'NGƯỜI CHƠI') {
   };
 }
 
-function normalizeUserData(raw, username = 'NGƯỜI CHƠI') {
-  const base = defaultUserData(username);
-  if (!raw || typeof raw !== 'object') return base;
-  return {
-    profile: { ...base.profile, ...(raw.profile || {}), username },
-    scores: { ...base.scores, ...(raw.scores || {}) },
-    history: Array.isArray(raw.history) ? raw.history : [],
-  };
-}
-
-function readLegacyData() {
-  const raw = parseJson(LEGACY_KEY, null);
-  if (!raw) return null;
-  return {
-    profile: { ...defaultUserData().profile, ...(raw.profile || {}) },
-    scores: { ...defaultUserData().scores, ...(raw.scores || {}) },
-    leaderboard: Array.isArray(raw.leaderboard) ? raw.leaderboard : starterScores,
-    settings: { ...defaultSettings, ...(raw.settings || {}) },
-  };
-}
-
-function readGlobalData() {
-  const raw = parseJson(GLOBAL_DATA_KEY, null);
-  const legacy = readLegacyData();
-  return {
-    leaderboard: Array.isArray(raw?.leaderboard)
-      ? raw.leaderboard
-      : (legacy?.leaderboard || [...starterScores]),
-    settings: { ...defaultSettings, ...(legacy?.settings || {}), ...(raw?.settings || {}) },
-  };
-}
-
-function writeGlobalData(data) {
-  localStorage.setItem(GLOBAL_DATA_KEY, JSON.stringify({
-    leaderboard: Array.isArray(data.leaderboard) ? data.leaderboard : starterScores,
-    settings: { ...defaultSettings, ...(data.settings || {}) },
-  }));
-}
-
-function readUserDataMap() {
-  const raw = parseJson(USER_DATA_KEY, {});
-  return raw && !Array.isArray(raw) ? raw : {};
-}
-
-function writeUserDataMap(userDataMap) {
-  localStorage.setItem(USER_DATA_KEY, JSON.stringify(userDataMap));
-}
+let userData = emptyUserData();
+let currentUser = null;
+let leaderboard = [];
+let settings = readSettings();
+localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+let scoreWriteQueue = Promise.resolve();
 
 function emitDataChange() {
   window.dispatchEvent(new CustomEvent('hub:data-change'));
 }
 
-export function getAuthState() {
-  const raw = parseJson(AUTH_KEY, {});
-  const users = Array.isArray(raw.users) ? raw.users : [];
-  let currentUserId = typeof raw.currentUserId === 'string' ? raw.currentUserId : null;
-  if (currentUserId && !users.some((user) => user.id === currentUserId)) {
-    currentUserId = null;
-    localStorage.setItem(AUTH_KEY, JSON.stringify({ users, currentUserId: null }));
-  }
-  return { users, currentUserId };
+export function hydrateSession(payload) {
+  currentUser = payload?.user || null;
+  userData = payload?.data
+    ? {
+        profile: { ...emptyUserData(currentUser?.username).profile, ...payload.data.profile },
+        scores: { ...emptyUserData().scores, ...payload.data.scores },
+        history: Array.isArray(payload.data.history) ? payload.data.history : [],
+      }
+    : emptyUserData(currentUser?.username);
+  emitDataChange();
+  return currentUser;
 }
 
-export function saveAuthState(authState) {
-  localStorage.setItem(AUTH_KEY, JSON.stringify({
-    users: Array.isArray(authState.users) ? authState.users : [],
-    currentUserId: authState.currentUserId || null,
-  }));
+export function clearSessionData() {
+  currentUser = null;
+  userData = emptyUserData();
+  leaderboard = [];
   emitDataChange();
 }
 
-export function initializeUserData(user) {
-  const userDataMap = readUserDataMap();
-  if (userDataMap[user.id]) return;
-
-  const legacy = Object.keys(userDataMap).length === 0 ? readLegacyData() : null;
-  const initialData = legacy
-    ? {
-        profile: { ...legacy.profile, username: user.username },
-        scores: legacy.scores,
-        history: [],
-      }
-    : defaultUserData(user.username);
-  userDataMap[user.id] = normalizeUserData(initialData, user.username);
-  writeUserDataMap(userDataMap);
+export function getSessionUser() {
+  return currentUser;
 }
 
-export function getCurrentUserId() {
-  return getAuthState().currentUserId;
+export async function refreshSession() {
+  const payload = await apiRequest('/api/me');
+  hydrateSession(payload);
+  return payload;
 }
 
 export function getData() {
-  const globalData = readGlobalData();
-  const authState = getAuthState();
-  const currentUser = authState.users.find((user) => user.id === authState.currentUserId);
-  const userDataMap = readUserDataMap();
-  const userData = currentUser
-    ? normalizeUserData(userDataMap[currentUser.id], currentUser.username)
-    : defaultUserData('NGƯỜI CHƠI');
-
   return {
-    ...userData,
-    leaderboard: globalData.leaderboard,
-    settings: globalData.settings,
+    profile: userData.profile,
+    scores: userData.scores,
+    history: userData.history,
+    leaderboard,
+    settings,
   };
 }
 
-export function saveData(data) {
-  const globalData = readGlobalData();
-  writeGlobalData({
-    leaderboard: Array.isArray(data.leaderboard) ? data.leaderboard : globalData.leaderboard,
-    settings: { ...globalData.settings, ...(data.settings || {}) },
-  });
-
-  const authState = getAuthState();
-  const currentUser = authState.users.find((user) => user.id === authState.currentUserId);
-  if (currentUser) {
-    const userDataMap = readUserDataMap();
-    userDataMap[currentUser.id] = normalizeUserData(data, currentUser.username);
-    writeUserDataMap(userDataMap);
-  }
+export function saveSettings(nextSettings) {
+  settings = { ...settings, ...nextSettings };
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   emitDataChange();
+  return settings;
 }
 
-export function updateData(updater) {
-  const current = getData();
-  const next = updater(current) || current;
-  saveData(next);
-  return next;
-}
-
-export function saveProfile(profile) {
-  return updateData((data) => {
-    data.profile = { ...data.profile, ...profile, username: data.profile.username };
-    return data;
-  });
-}
-
-export function saveSettings(settings) {
-  return updateData((data) => {
-    data.settings = { ...data.settings, ...settings };
-    return data;
-  });
+export async function saveProfile(profile) {
+  const payload = await apiRequest('/api/me', { method: 'PATCH', body: { avatar: profile.avatar } });
+  hydrateSession(payload);
+  return payload.data.profile;
 }
 
 export function addPlayTime(seconds) {
-  if (seconds < 1 || !getCurrentUserId()) return;
-  updateData((data) => {
-    data.profile.playTime += Math.round(seconds);
-    return data;
-  });
+  const rounded = Math.round(seconds);
+  if (rounded < 1 || !currentUser) return Promise.resolve();
+  userData.profile.playTime += rounded;
+  return apiRequest('/api/playtime', { method: 'POST', keepalive: true, body: { seconds: rounded } })
+    .catch((error) => console.error('Không thể lưu thời gian chơi:', error));
 }
 
 export function recordResult(game, score, options = {}) {
-  const userId = getCurrentUserId();
-  if (!userId) return getData();
-  return updateData((data) => {
-    data.profile.gamesPlayed += 1;
-    if (game === 'SNAKE') data.scores.snake = Math.max(data.scores.snake, score);
-    if (game === 'BLOCK') data.scores.block = Math.max(data.scores.block, score);
-    if (game === 'CARO' && options.winner) {
-      const key = options.winner === 'X' ? 'caroX' : 'caroO';
-      data.scores[key] += 1;
-    }
-
-    const result = {
-      id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      userId,
-      player: data.profile.username,
-      game,
-      score,
-      date: new Date().toISOString().slice(0, 10),
-    };
-    data.history.unshift(result);
-    data.history = data.history.slice(0, 100);
-
-    if (score > 0 || game === 'CARO') {
-      data.leaderboard.push(result);
-      data.leaderboard = data.leaderboard
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 100);
-    }
-    return data;
+  if (!currentUser) return Promise.resolve(getData());
+  const normalizedGame = String(game).toUpperCase();
+  userData.profile.gamesPlayed += 1;
+  if (normalizedGame === 'SNAKE') userData.scores.snake = Math.max(userData.scores.snake, Number(score) || 0);
+  if (normalizedGame === 'BLOCK') userData.scores.block = Math.max(userData.scores.block, Number(score) || 0);
+  if (normalizedGame === 'CARO' && options.winner) {
+    const key = options.winner === 'X' ? 'caroX' : 'caroO';
+    userData.scores[key] += 1;
+  }
+  emitDataChange();
+  scoreWriteQueue = scoreWriteQueue.catch(() => {}).then(() => apiRequest('/api/scores', {
+    method: 'POST',
+    body: { game: normalizedGame, score: Number(score) || 0, winner: options.winner || null },
+  }));
+  return scoreWriteQueue.then((payload) => {
+    hydrateSession(payload.dashboard);
+    return getData();
+  }).catch((error) => {
+    console.error('Không thể lưu điểm:', error);
+    return refreshSession().catch(() => getData());
   });
+}
+
+export async function refreshLeaderboard(game = 'ALL') {
+  const query = game && game !== 'ALL' ? `?game=${encodeURIComponent(game)}` : '';
+  const payload = await apiRequest(`/api/leaderboard${query}`);
+  leaderboard = Array.isArray(payload.entries) ? payload.entries : [];
+  emitDataChange();
+  return leaderboard;
 }
 
 export function formatPlayTime(seconds) {

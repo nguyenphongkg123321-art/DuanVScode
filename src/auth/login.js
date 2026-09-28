@@ -27,7 +27,7 @@ export function renderLogin({ onLogin, onShowRegister, notice = '' }) {
         <button class="auth-submit" type="submit"><span>ĐĂNG NHẬP</span><b>→</b></button>
       </form>
       <p class="auth-switch">Chưa có tài khoản? <button type="button">Đăng ký</button></p>
-      <div class="auth-security"><i>◆</i><span>Mật khẩu được bảo vệ bằng PBKDF2 + SHA-256</span></div>
+      <div class="auth-security"><i>◆</i><span>Phiên đăng nhập an toàn, mật khẩu không lưu trên trình duyệt</span></div>
     </section>`;
 
   const form = screen.querySelector('form');
@@ -61,7 +61,7 @@ export function renderLogin({ onLogin, onShowRegister, notice = '' }) {
     submitButton.querySelector('span').textContent = 'ĐANG XÁC THỰC...';
     try {
       const result = await loginAccount({ username, password });
-      if (!result.ok) generalError.textContent = result.message;
+      if (!result.ok) generalError.textContent = result.message || 'Không thể đăng nhập.';
       else onLogin(result.user);
     } catch {
       generalError.textContent = 'Không thể đăng nhập lúc này. Vui lòng thử lại.';

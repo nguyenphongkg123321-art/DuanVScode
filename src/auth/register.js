@@ -19,7 +19,7 @@ export function renderRegister({ onRegistered, onShowLogin }) {
         </div>
         <div class="auth-field">
           <label for="register-password">MẬT KHẨU</label>
-          <div class="auth-input"><span>◇</span><input id="register-password" name="password" type="password" minlength="6" autocomplete="new-password" placeholder="Tối thiểu 6 ký tự" /><button type="button" class="password-toggle" aria-label="Hiện mật khẩu">👁</button></div>
+          <div class="auth-input"><span>◇</span><input id="register-password" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Tối thiểu 8 ký tự" /><button type="button" class="password-toggle" aria-label="Hiện mật khẩu">👁</button></div>
           <small class="field-error" data-error="password"></small>
         </div>
         <div class="auth-field">
@@ -31,7 +31,7 @@ export function renderRegister({ onRegistered, onShowLogin }) {
         <button class="auth-submit" type="submit"><span>TẠO TÀI KHOẢN</span><b>＋</b></button>
       </form>
       <p class="auth-switch">Đã có tài khoản? <button type="button">Đăng nhập</button></p>
-      <div class="auth-security"><i>◆</i><span>Không yêu cầu email, số điện thoại hoặc OTP</span></div>
+      <div class="auth-security"><i>◆</i><span>Mật khẩu được mã hóa an toàn trên máy chủ</span></div>
     </section>`;
 
   const form = screen.querySelector('form');
@@ -78,7 +78,10 @@ export function renderRegister({ onRegistered, onShowLogin }) {
     submitButton.querySelector('span').textContent = 'ĐANG TẠO...';
     try {
       const result = await registerAccount(values());
-      if (!result.ok) showErrors(result.errors);
+      if (!result.ok) {
+        showErrors(result.errors || {});
+        generalError.textContent = result.message || '';
+      }
       else onRegistered(result.user);
     } catch {
       generalError.textContent = 'Không thể tạo tài khoản lúc này. Vui lòng thử lại.';

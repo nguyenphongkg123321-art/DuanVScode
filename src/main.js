@@ -8,7 +8,7 @@ import { createSnakeGame } from './games/snake.js';
 import { createBlockGame } from './games/block.js';
 import { getData } from './utils/storage.js';
 import { sound } from './utils/sound.js';
-import { getCurrentUser, logoutAccount } from './auth/auth.js';
+import { getCurrentUser, initializeAuth, logoutAccount } from './auth/auth.js';
 import { renderLogin } from './auth/login.js';
 import { renderRegister } from './auth/register.js';
 
@@ -133,9 +133,9 @@ function render() {
   }
 
   const isGame = route.startsWith('game/');
-  if (!isGame) app.append(renderNavbar(route, navigate, () => {
+  if (!isGame) app.append(renderNavbar(route, navigate, async () => {
     sound.stopMusic();
-    logoutAccount();
+    await logoutAccount();
     authNotice = '';
     navigate('login');
   }));
@@ -160,8 +160,14 @@ function render() {
 const settings = getData().settings;
 document.documentElement.dataset.theme = settings.theme;
 window.addEventListener('hashchange', render);
+window.addEventListener('hub:auth-expired', () => {
+  if (!getCurrentUser()) return;
+  sound.stopMusic();
+  logoutAccount().finally(() => navigate('login'));
+});
 window.addEventListener('beforeunload', () => currentGame?.destroy?.());
 document.addEventListener('pointerdown', () => {
   if (getCurrentUser()) sound.startMusic();
 });
-render();
+app.innerHTML = '<main class=auth-screen><div class=empty-state>Đang kết nối máy chủ…</div></main>';
+initializeAuth().finally(render);

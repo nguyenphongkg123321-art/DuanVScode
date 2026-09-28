@@ -43,12 +43,20 @@ export function renderProfilePage(onSaved) {
     page.querySelector('#selected-avatar').className = `large-avatar avatar-${selected}`;
     sound.click();
   }));
-  page.querySelector('form').addEventListener('submit', (event) => {
+  page.querySelector('form').addEventListener('submit', async (event) => {
     event.preventDefault();
-    saveProfile({ avatar: selected });
-    page.querySelector('.save-message').textContent = 'Đã lưu hồ sơ thành công.';
-    sound.score();
-    onSaved?.();
+    const submit = event.currentTarget.querySelector('[type=submit]');
+    submit.disabled = true;
+    try {
+      await saveProfile({ avatar: selected });
+      page.querySelector('.save-message').textContent = 'Đã lưu hồ sơ thành công.';
+      sound.score();
+      onSaved?.();
+    } catch (error) {
+      page.querySelector('.save-message').textContent = error.message || 'Không thể lưu hồ sơ.';
+    } finally {
+      submit.disabled = false;
+    }
   });
   return page;
 }
